@@ -69,7 +69,8 @@ class TSDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, item: int) -> Tuple[torch.Tensor, int]:
-        idx = [self.bos_id] + self.indices[item][:self.max_length - 2] + [self.eos_id]
-        length = len(idx)
-        idx += [self.pad_id] * (self.max_length - length)
-        return idx, length
+        indices = [self.bos_id] + self.indices[item][:self.max_length - 2] + [self.eos_id]
+        length = len(indices)
+        pad = torch.full((self.max_length,), self.pad_id, dtype=torch.int64)
+        pad[:length] = torch.tensor(indices)
+        return torch.tensor(pad), torch.tensor(length)
