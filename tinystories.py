@@ -17,7 +17,7 @@ def create_mask(x, pad_idx, device):
     else:
         idx_seq_len = x.shape[0]
     idx_mask = generate_square_mask(idx_seq_len, device)
-    idx_padding_mask = (x == pad_idx)
+    idx_padding_mask = (idx_mask == pad_idx)
     return idx_mask, idx_padding_mask
 
 
