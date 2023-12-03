@@ -37,7 +37,7 @@ class PositionalEncoding(nn.Module):
 class LLAMA(nn.Module):
     def __init__(self, n_layers, d_model, nhead, vocab_size, dim_ff, dropout, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.positional_encoding = PositionalEncoding(embed_dim=d_model, dropout=dropout)
+        self.positional_encoding = PositionalEncoding(d_model, dropout)
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.transformer = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(d_model, nhead, dim_ff, dropout, batch_first=True), n_layers
