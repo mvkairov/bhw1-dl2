@@ -18,7 +18,7 @@ def create_mask(x, pad_idx, device):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
