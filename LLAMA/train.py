@@ -27,10 +27,10 @@ def evaluate(model, dataloader, loss_fn, pad_idx):
 def train(model, n_epochs, pad_idx, optimizer, scheduler, train_loader, val_loader, dataset, wandb_instance, steps_per_epoch):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
     min_loss = 100
+    cur_step = 0
 
     for _ in range(n_epochs):
         loss_sum = 0
-        cur_step = 0
         for i, (tgt, _) in enumerate(tqdm(inf_loop(train_loader), total=steps_per_epoch)):
             model.train()
             tgt = tgt.to('cuda')
