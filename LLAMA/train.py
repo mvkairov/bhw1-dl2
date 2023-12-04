@@ -39,7 +39,7 @@ def evaluate(model, dataloader, loss_fn, pad_idx, device):
     return losses / len(dataloader)
 
 
-def train(n_epochs, model, pad_idx, optimizer, train_loader, val_loader, device, dataset, scheduler, wandb_instance, len_epoch=10000, log_step=500):
+def train(n_epochs, model, pad_idx, optimizer, train_loader, val_loader, device, dataset, scheduler, wandb_instance, len_epoch, log_step):
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
     train_loader_inf = inf_loop(train_loader)
     best_loss = 1e6
@@ -60,7 +60,7 @@ def train(n_epochs, model, pad_idx, optimizer, train_loader, val_loader, device,
             losses += loss.item()
             cur_step = epoch * len_epoch + i
 
-            if i % len_epoch == 0:
+            if i == len_epoch:
                 val_loss = evaluate(model, val_loader, loss_fn, pad_idx, device)
                 if val_loss < best_loss:
                     print(f'checkpoint at {cur_step}')
@@ -73,14 +73,14 @@ def train(n_epochs, model, pad_idx, optimizer, train_loader, val_loader, device,
                         f'stepN{cur_step}_textN{t_num}': wandb_instance.Html(text)
                     }, step=cur_step)
                 wandb_instance.log({
-                    'train_loss': losses / (i % log_step + 1),
+                    'train_loss': losses / ((epoch * len_epoch + 1) + i),
                     'val_loss': val_loss,
                     'lr': scheduler.get_last_lr()[0]
                 }, step=cur_step)
-                print(f"epoch: {epoch}, train loss: {(losses / (i % log_step + 1)):.3f}, val loss: {val_loss:.3f}")
+                print(f"epoch: {epoch}, train loss: {(losses / (epoch * len_epoch + 1) + i):.3f}, val loss: {val_loss:.3f}")
                 break
 
-            if i % log_step == 0:
+            if i % log_step == 0 and i > 0 or i == 1:
                 wandb_instance.log({
                     'train_loss': losses / log_step,
                     'lr': scheduler.get_last_lr()[0]

@@ -1,43 +1,48 @@
-import torch.nn as nn
 import torch
-import math
+from torch import Tensor
+import torch.nn as nn
 import copy
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, emb_size: int, maxlen: int = 5000):
-        super(PositionalEncoding, self).__init__()
-        den = torch.exp(- torch.arange(0, emb_size, 2)* math.log(10000) / emb_size)
-        pos = torch.arange(0, maxlen).reshape((maxlen, 1))
-        pos_embedding = torch.zeros((maxlen, emb_size))
-        pos_embedding[:, 0::2] = torch.sin(pos * den)
-        pos_embedding[:, 1::2] = torch.cos(pos * den)
-        pos_embedding = pos_embedding.unsqueeze(-2)
 
-        self.register_buffer('pos_embedding', pos_embedding)
+def generate_square_mask(sz, device):
+    mask = (torch.triu(torch.ones((sz, sz), device=device)) == 1).transpose(0, 1)
+    mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+    return mask
 
-    def forward(self, token_embedding: torch.Tensor):
-        return token_embedding + self.pos_embedding[:token_embedding.size(0), :]
 
-class PreNormDecoderBlock(nn.Module):
-    def __init__(self, embed_dim: int, n_heads: int, hidden_dim):
-        super().__init__()
+def create_mask(x, pad_idx, device):
+    if len(x.shape) == 2:
+        tgt_seq_len = x.shape[1]
+    else:
+        tgt_seq_len = x.shape[0]
+    tgt_mask = generate_square_mask(tgt_seq_len, device)
+    tgt_padding_mask = (x == pad_idx)
+    return tgt_mask, tgt_padding_mask
 
-        self.attention = nn.MultiheadAttention(embed_dim, n_heads, batch_first=True)
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, hidden_dim),
+
+class DecoderLayer(nn.Module):
+    def __init__(self, embed_dim, num_heads, ff_dim, dropout, batch_first=True, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=batch_first)
+        self.attn_dropout = nn.Dropout(dropout)
+
+        self.feed_forward = nn.Sequential(
+            nn.Linear(embed_dim, ff_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, embed_dim)
+            nn.Dropout(dropout),
+            nn.Linear(ff_dim, embed_dim),
+            nn.Dropout(dropout)
         )
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
 
-        self.attn_layernorm = nn.LayerNorm(embed_dim)
-        self.ffn_layernorm = nn.LayerNorm(embed_dim)
-    
     def forward(self, x, attention_mask, padding_mask):
-        x_norm = self.attn_layernorm(x)
-        x_attn, _ = self.attention(x_norm, x_norm, x_norm, key_padding_mask=padding_mask, attn_mask=attention_mask)
-        h = x_attn + x
-        out = h + self.ffn(self.ffn_layernorm(x))
-        return out
+        x_ = self.norm1(x)
+        x_, _ = self.attention(x, x, x, attn_mask=attention_mask, key_padding_mask=padding_mask)
+        x_ = x + x_
+        x_ = self.norm2(x_)
+        x_ = x_ + self.feed_forward(x_)
+        return x_
 
 class Decoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, *args, **kwargs) -> None:
@@ -49,17 +54,55 @@ class Decoder(nn.Module):
             x = layer(x, attention_mask, padding_mask)
         return x
 
-class LLaMA(nn.Module):
-    def __init__(self, vocab_size, embed_dim, n_heads, hidden_dim, num_layers, max_seq_len, *args, **kwargs):
+class PositionalEncoding(nn.Module):
+    def __init__(self, embed_dim, dropout: float = 0.1, max_len: int = 5000):
+        """
+        Inputs
+            embed_dim - Hidden dimensionality of the input.
+            max_len - Maximum length of a sequence to expect.
+        """
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.dropout = nn.Dropout(dropout)
+
+        pe = torch.zeros(max_len, self.embed_dim)
+        pos = torch.arange(max_len).reshape(-1, 1)
+        denom = torch.pow(10000, (torch.arange(self.embed_dim) - (torch.arange(self.embed_dim) % 2)) / embed_dim)
+        pe = pos / denom
+        pe[:, 0::2] = torch.sin(pe[:, 0::2])
+        pe[:, 1::2] = torch.cos(pe[:, 1::2])
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe, persistent=False)
+
+    def forward(self, x):
+        x = x + self.pe[:, :x.shape[-2], :]
+        return self.dropout(x)
+
+class LLAMA(nn.Module):
+    def __init__(self, num_layers, embed_dim, num_heads, vocab_size, ff_dim, dropout, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
+        self.positional_encoding = PositionalEncoding(embed_dim=embed_dim, dropout=dropout)
         self.embedding = nn.Embedding(vocab_size, embed_dim)
-        self.positional_encoding = PositionalEncoding(embed_dim, max_seq_len)
-        self.decoder = Decoder(PreNormDecoderBlock(embed_dim, n_heads, hidden_dim), num_layers)
-        self.linear = nn.Linear(embed_dim, vocab_size)
+        self.transformer = Decoder(
+            DecoderLayer(embed_dim, num_heads, ff_dim, dropout, batch_first=True),
+            num_layers=num_layers
+        )
+        self.classification = nn.Linear(embed_dim, vocab_size)
     
-    def forward(self, x, attention_mask, padding_mask):
-        x = self.embedding(x)
+    def __str__(self):
+        """
+        Model prints with number of trainable parameters
+        """
+        model_parameters = filter(lambda p: p.requires_grad, self.parameters())
+        params = sum([torch.prod(torch.tensor(p.shape)) for p in model_parameters])
+        return super().__str__() + "\nTrainable parameters: {}".format(params)
+    
+    def forward(self, input_ids: Tensor, attention_mask: Tensor, padding_mask: Tensor):
+        x = self.embedding(input_ids)
         x = self.positional_encoding(x)
-        x = self.decoder(x, attention_mask, padding_mask)
-        x = self.linear(x)
-        return x
+        x = self.transformer(x, attention_mask, padding_mask)
+        return self.classification(x)
+    
+    def get_next_token(self, prefix: Tensor, attention_mask: Tensor, padding_mask: Tensor):
+        """ :returns: probabilities of next token """
+        return self.forward(prefix, attention_mask, padding_mask)[:, -1, :]
