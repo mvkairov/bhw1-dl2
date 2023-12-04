@@ -54,18 +54,20 @@ class PositionalEncoding(nn.Module):
 class LLAMA(nn.Module):
     def __init__(self, num_layers, d_model, nhead, vocab_size, ff_dim, dropout, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.positional_encoding = PositionalEncoding(d_model)
         self.embedding = nn.Embedding(vocab_size, d_model)
+        self.positional_encoding = PositionalEncoding(d_model)
         self.decoder = nn.TransformerDecoder(
             DecoderLayer(d_model, nhead, ff_dim, dropout),
             num_layers=num_layers
         )
         self.linear = nn.Linear(d_model, vocab_size)
+
+        print(sum([p.numel() for p in self.parameters() if p.requires_grad]), 'parameters :)')
     
-    def forward(self, input_ids, attention_mask, padding_mask):
+    def forward(self, input_ids, attn_mask, pad_mask):
         x = self.embedding(input_ids)
         x = self.positional_encoding(x)
-        x = self.decoder(x, attention_mask, padding_mask)
+        x = self.decoder(x, attn_mask, pad_mask)
         return self.linear(x)
     
     def get_next_token(self, prefix, mask, pad_mask):
