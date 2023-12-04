@@ -71,7 +71,7 @@ def train(model, n_epochs, pad_idx, optimizer, scheduler, train_loader, val_load
                 val_loss = evaluate(model, val_loader, loss_fn, pad_idx)
                 if val_loss < min_loss:
                     print(f'checkpoint at {cur_step}')
-                    torch.save(model.state_dict(), 'checkpoint.pth')
+                    torch.save(model.state_dict(), 'best_model.pt')
                     min_loss = val_loss
                 text = dataset.ids2text(generate(model, dataset.sp_model, pad_idx))
                 wandb_instance.log({f'stepN{cur_step}': text}, step=cur_step)
