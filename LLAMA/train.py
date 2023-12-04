@@ -28,7 +28,7 @@ def train(model, n_epochs, pad_idx, optimizer, scheduler, train_loader, val_load
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
     min_loss = 100
 
-    for epoch in range(n_epochs):
+    for _ in range(n_epochs):
         loss_sum = 0
         cur_step = 0
         for i, (tgt, _) in enumerate(tqdm(inf_loop(train_loader), total=steps_per_epoch)):
@@ -52,19 +52,20 @@ def train(model, n_epochs, pad_idx, optimizer, scheduler, train_loader, val_load
                     'train_loss': loss_sum / (i + 1),
                     'lr': scheduler.get_last_lr()[0]
                 }, step=cur_step)
-                print(f'step {epoch}-{i}; train_loss {(loss_sum / (i + 1)):.3f}')
+                print(f'step {cur_step}; train_loss {(loss_sum / (i + 1)):.3f}')
 
             if i == steps_per_epoch - 1:
                 val_loss = evaluate(model, val_loader, loss_fn, pad_idx)
                 if val_loss < min_loss:
-                    torch.save(model.state_dict(), 'best_model.pt')
                     min_loss = val_loss
+                    torch.save(model.state_dict(), 'best_model.pt')
                 text = dataset.ids2text(make_seq(model, dataset.sp_model, pad_idx))
                 wandb_instance.log({
                     'train_loss': loss_sum / steps_per_epoch,
                     'val_loss': val_loss,
                     'lr': scheduler.get_last_lr()[0],
-                    f'stepN{cur_step}': wandb_instance.Html(text)
                 }, step=cur_step)
                 print(f'train_loss {(loss_sum / steps_per_epoch):.3f}; val_loss: {val_loss:.3f}')
+                text = dataset.ids2text(make_seq(model, dataset.sp_model, pad_idx))
+                print(text, '\n')
                 break
